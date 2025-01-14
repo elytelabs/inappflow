@@ -54,7 +54,7 @@ publishing {
         register<MavenPublication>("release") {
             groupId = "com.elytelabs.inappflow"
             artifactId = "inappflow"
-            version = "1.1.0"
+            version = "1.1.4"
 
             afterEvaluate {
                 from(components["release"])
