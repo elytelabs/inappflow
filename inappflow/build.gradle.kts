@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.elytelabs.inappflow"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 24
@@ -26,11 +26,11 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_18
+        targetCompatibility = JavaVersion.VERSION_18
     }
     kotlinOptions {
-        jvmTarget = "17"
+        jvmTarget = "18"
     }
 }
 
@@ -54,7 +54,7 @@ publishing {
         register<MavenPublication>("release") {
             groupId = "com.elytelabs.inappflow"
             artifactId = "inappflow"
-            version = "1.1.4"
+            version = "1.1.5"
 
             afterEvaluate {
                 from(components["release"])
