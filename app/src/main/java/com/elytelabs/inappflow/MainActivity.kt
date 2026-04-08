@@ -14,30 +14,35 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContentView(R.layout.activity_main)
+
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
             insets
         }
 
-        // Show Rating Dialog With Default Params
-        showDefaultRatingDialog(this)
+        // Initialize monitoring for In-App Review
+        InAppReviewManager.with(this)
+            .setInstallDays(2)
+            .setLaunchTimes(3)
+            .setRemindInterval(2)
+            .monitor()
 
-        // or customise the dialog
+        // Check if conditions are met to show the review dialog
+        InAppReviewManager.showRateDialogIfNeeded(this)
 
-//        InAppReviewManager.with(this)
-//            .setInstallDays(2)
-//            .setLaunchTimes(3)
-//            .setRemindInterval(2)
-//            .monitor()
-//        // Show a dialog if meets conditions
-//        InAppReviewManager.showRateDialogIfNeeded(this)
-
+        // Check for and initiate in-app updates
         inAppUpdateManager.setupInAppUpdate()
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Ensures that an immediate update in progress is resumed
+        inAppUpdateManager.resumeUpdateIfNeeded()
+    }
+
     override fun onDestroy() {
-        super.onDestroy()
         inAppUpdateManager.onDestroy()
+        super.onDestroy()
     }
 }

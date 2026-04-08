@@ -8,9 +8,11 @@ import androidx.appcompat.app.AppCompatActivity
 import com.google.android.play.core.appupdate.AppUpdateManagerFactory
 import com.google.android.play.core.appupdate.AppUpdateOptions
 import com.google.android.play.core.install.InstallStateUpdatedListener
+import com.google.android.play.core.install.InstallException
 import com.google.android.play.core.install.model.AppUpdateType
 import com.google.android.play.core.install.model.InstallStatus
 import com.google.android.play.core.install.model.UpdateAvailability
+import com.google.android.play.core.install.model.InstallErrorCode
 
 /**
  * Manages in-app updates using Google Play Core Library.
@@ -23,14 +25,14 @@ import com.google.android.play.core.install.model.UpdateAvailability
  * private lateinit var updateManager: InAppUpdateManager
  *
  * override fun onCreate(savedInstanceState: Bundle?) {
- *     super.onCreate(savedInstanceState)
- *     updateManager = InAppUpdateManager(this)
- *     updateManager.setupInAppUpdate()
+ * super.onCreate(savedInstanceState)
+ * updateManager = InAppUpdateManager(this)
+ * updateManager.setupInAppUpdate()
  * }
  *
  * override fun onDestroy() {
- *     updateManager.onDestroy()
- *     super.onDestroy()
+ * updateManager.onDestroy()
+ * super.onDestroy()
  * }
  * ```
  */
@@ -48,12 +50,9 @@ class InAppUpdateManager(private val activity: AppCompatActivity) {
                 val bytesDownloaded = state.bytesDownloaded()
                 val totalBytesToDownload = state.totalBytesToDownload()
                 Log.d("App Update", "Downloading: $bytesDownloaded / $totalBytesToDownload")
-                // Update UI with download progress if needed
             }
             InstallStatus.DOWNLOADED -> {
                 Log.d("App Update", "Download complete. Ready to install.")
-                // For FLEXIBLE updates, prompt user to complete installation
-                // appUpdateManager.completeUpdate()
             }
             InstallStatus.INSTALLED -> {
                 Log.d("App Update", "Update installed successfully.")
@@ -77,8 +76,6 @@ class InAppUpdateManager(private val activity: AppCompatActivity) {
         activity.registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result: ActivityResult ->
             if (result.resultCode != RESULT_OK) {
                 Log.d("App Update", "Update flow failed! Result code: ${result.resultCode}")
-                // If the update is canceled or fails, you can request to start the update again
-                // or handle the failure scenario (e.g., show a dialog)
             } else {
                 Log.d("App Update", "Update flow completed successfully.")
             }
@@ -100,7 +97,6 @@ class InAppUpdateManager(private val activity: AppCompatActivity) {
                 && appUpdateInfo.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE)
             ) {
                 Log.d("App Update", "Update available. Initiating immediate update flow.")
-                // Request an immediate update
                 appUpdateManager.startUpdateFlowForResult(
                     appUpdateInfo,
                     activityResultLauncher,
@@ -110,18 +106,29 @@ class InAppUpdateManager(private val activity: AppCompatActivity) {
                 Log.d("App Update", "No update available or update type not allowed.")
             }
         }.addOnFailureListener { exception ->
-            Log.e("App Update", "Failed to check for updates", exception)
+            if (exception is InstallException) {
+                when (exception.errorCode) {
+                    InstallErrorCode.ERROR_INSTALL_NOT_ALLOWED -> {
+                        Log.e("App Update", "Update not allowed: Check Play Store login and app testing status.")
+                    }
+                    InstallErrorCode.ERROR_PLAY_STORE_NOT_FOUND -> {
+                        Log.e("App Update", "Play Store not found on this device.")
+                    }
+                    else -> {
+                        Log.e("App Update", "Install error: ${exception.errorCode}")
+                    }
+                }
+            }
+            Log.e("App Update", "Failed to check for updates: ${exception.message}", exception)
         }
     }
 
     /**
      * Checks if an update is already in progress and resumes it if necessary.
-     * Call this in onResume() to handle cases where the user left and returned to the app.
      */
     fun resumeUpdateIfNeeded() {
         appUpdateManager.appUpdateInfo.addOnSuccessListener { appUpdateInfo ->
             if (appUpdateInfo.updateAvailability() == UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS) {
-                // An update is already in progress, resume it
                 Log.d("App Update", "Resuming in-progress update.")
                 appUpdateManager.startUpdateFlowForResult(
                     appUpdateInfo,
@@ -134,10 +141,8 @@ class InAppUpdateManager(private val activity: AppCompatActivity) {
 
     /**
      * Cleans up resources and unregisters listeners.
-     * MUST be called in the Activity's onDestroy() method to prevent memory leaks.
      */
     fun onDestroy() {
-        // Unregister the listener using the stored instance
         appUpdateManager.unregisterListener(installStateUpdatedListener)
         Log.d("App Update", "Listener unregistered successfully.")
     }
