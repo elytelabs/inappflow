@@ -19,6 +19,27 @@ import com.google.android.play.core.install.model.InstallStatus
 import com.google.android.play.core.install.model.UpdateAvailability
 
 /**
+ * In-app update types supported by InAppFlow.
+ */
+enum class UpdateType(val value: Int) {
+    /** Full-screen blocking update flow for critical releases. */
+    IMMEDIATE(AppUpdateType.IMMEDIATE),
+
+    /** Background downloading update flow with completion callback. */
+    FLEXIBLE(AppUpdateType.FLEXIBLE)
+}
+
+/**
+ * Encapsulated update information returned when checking for updates.
+ */
+data class AppUpdateResult(
+    val isAvailable: Boolean,
+    val availableVersionCode: Int = 0,
+    val updatePriority: Int = 0,
+    internal val playAppUpdateInfo: AppUpdateInfo? = null
+)
+
+/**
  * Manages in-app updates using Google Play Core Library.
  *
  * This class handles immediate and flexible app updates, properly manages
@@ -101,15 +122,17 @@ class InAppUpdateManager {
     /**
      * Checks if an update is available without immediately launching the update flow.
      *
-     * @param onResult Callback returning boolean isAvailable and optional [AppUpdateInfo].
+     * @param onResult Callback returning [AppUpdateResult].
      */
-    fun checkUpdateAvailability(onResult: (isAvailable: Boolean, updateInfo: AppUpdateInfo?) -> Unit) {
+    fun checkUpdateAvailability(onResult: (AppUpdateResult) -> Unit) {
         appUpdateManager.appUpdateInfo.addOnSuccessListener { appUpdateInfo ->
             val isAvailable = appUpdateInfo.updateAvailability() == UpdateAvailability.UPDATE_AVAILABLE
-            onResult(isAvailable, appUpdateInfo)
+            val versionCode = appUpdateInfo.availableVersionCode()
+            val priority = appUpdateInfo.updatePriority()
+            onResult(AppUpdateResult(isAvailable, versionCode, priority, appUpdateInfo))
         }.addOnFailureListener { exception ->
             Log.w(TAG, "Check update availability failed: ${exception.message}")
-            onResult(false, null)
+            onResult(AppUpdateResult(isAvailable = false))
         }
     }
 
@@ -117,7 +140,7 @@ class InAppUpdateManager {
      * Checks for available updates and initiates an update flow (IMMEDIATE or FLEXIBLE).
      */
     fun setupInAppUpdate(
-        updateType: Int = AppUpdateType.IMMEDIATE,
+        updateType: UpdateType = UpdateType.IMMEDIATE,
         onDownloaded: (() -> Unit)? = null
     ) {
         this.onUpdateDownloadedListener = onDownloaded
@@ -130,10 +153,10 @@ class InAppUpdateManager {
         val appUpdateInfoTask = appUpdateManager.appUpdateInfo
         appUpdateInfoTask.addOnSuccessListener { appUpdateInfo ->
             if (appUpdateInfo.updateAvailability() == UpdateAvailability.UPDATE_AVAILABLE
-                && appUpdateInfo.isUpdateTypeAllowed(updateType)
+                && appUpdateInfo.isUpdateTypeAllowed(updateType.value)
             ) {
                 Log.d(TAG, "Update available. Initiating update flow (type: $updateType).")
-                startUpdate(appUpdateInfo, updateType)
+                startUpdateInternal(appUpdateInfo, updateType.value)
             } else {
                 Log.d(TAG, "No update available or update type not allowed.")
             }
@@ -156,16 +179,38 @@ class InAppUpdateManager {
     }
 
     /**
-     * Starts the in-app update flow with the specified [appUpdateInfo] and [updateType].
+     * Starts the in-app update flow using a previously checked [AppUpdateResult].
      */
-    fun startUpdate(appUpdateInfo: AppUpdateInfo, updateType: Int = AppUpdateType.IMMEDIATE) {
+    fun startUpdate(
+        updateResult: AppUpdateResult,
+        updateType: UpdateType = UpdateType.IMMEDIATE,
+        onDownloaded: (() -> Unit)? = null
+    ) {
+        if (onDownloaded != null) {
+            this.onUpdateDownloadedListener = onDownloaded
+        }
+        try {
+            appUpdateManager.registerListener(installStateUpdatedListener)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to register install listener: ${e.message}")
+        }
+
+        val playInfo = updateResult.playAppUpdateInfo
+        if (playInfo != null) {
+            startUpdateInternal(playInfo, updateType.value)
+        } else {
+            Log.w(TAG, "Cannot start update: AppUpdateResult does not contain valid update info.")
+        }
+    }
+
+    private fun startUpdateInternal(appUpdateInfo: AppUpdateInfo, playUpdateType: Int) {
         val currentLauncher = launcher
         if (currentLauncher != null) {
             try {
                 appUpdateManager.startUpdateFlowForResult(
                     appUpdateInfo,
                     currentLauncher,
-                    AppUpdateOptions.newBuilder(updateType).build()
+                    AppUpdateOptions.newBuilder(playUpdateType).build()
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to start update flow with launcher: ${e.message}", e)
@@ -178,11 +223,11 @@ class InAppUpdateManager {
     /**
      * Checks if an update is already in progress and resumes it if necessary.
      */
-    fun resumeUpdateIfNeeded(updateType: Int = AppUpdateType.IMMEDIATE) {
+    fun resumeUpdateIfNeeded(updateType: UpdateType = UpdateType.IMMEDIATE) {
         appUpdateManager.appUpdateInfo.addOnSuccessListener { appUpdateInfo ->
             if (appUpdateInfo.updateAvailability() == UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS) {
                 Log.d(TAG, "Resuming in-progress update.")
-                startUpdate(appUpdateInfo, updateType)
+                startUpdateInternal(appUpdateInfo, updateType.value)
             } else if (appUpdateInfo.installStatus() == InstallStatus.DOWNLOADED) {
                 onUpdateDownloadedListener?.invoke()
             }
@@ -202,6 +247,7 @@ class InAppUpdateManager {
     fun onDestroy() {
         try {
             appUpdateManager.unregisterListener(installStateUpdatedListener)
+            onUpdateDownloadedListener = null
             Log.d(TAG, "Listener unregistered successfully.")
         } catch (e: Exception) {
             Log.w(TAG, "Error unregistering listener: ${e.message}")

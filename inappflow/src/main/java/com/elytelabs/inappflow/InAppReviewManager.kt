@@ -96,11 +96,7 @@ class InAppReviewManager private constructor(context: Context) {
          * @param activity The Activity to show the review dialog in (must not be finishing)
          */
         fun showRateDialogIfNeeded(activity: Activity) {
-            val manager = instance
-            if (manager == null) {
-                Log.w(TAG, "InAppReviewManager not initialized. Call with() first.")
-                return
-            }
+            val manager = instance ?: with(activity)
 
             if (activity.isFinishing || activity.isDestroyed) {
                 Log.d(TAG, "Activity is finishing/destroyed. Skipping review dialog.")
@@ -246,11 +242,13 @@ class InAppReviewManager private constructor(context: Context) {
 
     private fun isOverInstallDate(): Boolean {
         val installDate = ReviewPrefs.getInstallDate(appContext)
+        if (installDate == 0L) return false
         return isOverDate(installDate, installDaysThreshold)
     }
 
     private fun isOverRemindDate(): Boolean {
         val remindDate = ReviewPrefs.getRemindInterval(appContext)
+        if (remindDate == 0L) return true
         return isOverDate(remindDate, remindIntervalDays)
     }
 

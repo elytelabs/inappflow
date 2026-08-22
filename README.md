@@ -4,7 +4,7 @@
 [![API](https://img.shields.io/badge/API-25%2B-brightgreen.svg)](https://android-arsenal.com/api?level=25)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 
-A lightweight Kotlin Android library that simplifies handling Google Play **In-App Updates** (Immediate & Flexible) and displaying **In-App Review dialogs** with smart usage tracking.
+A lightweight Kotlin Android library that encapsulates Google Play **In-App Updates** (Immediate & Flexible) and **In-App Review dialogs** with clean, dependency-free APIs and smart usage tracking.
 
 ---
 
@@ -12,9 +12,10 @@ A lightweight Kotlin Android library that simplifies handling Google Play **In-A
 
 | Feature | Description |
 |---------|-------------|
-| **Immediate In-App Updates** | Full-screen blocking update flow for critical updates |
-| **Flexible In-App Updates** | Background download with completion callback and restart handling |
-| **Update Availability Check** | Check if an update is available without launching any UI popup |
+| **Immediate In-App Updates** | Full-screen blocking update flow for critical releases |
+| **Flexible In-App Updates** | Background downloading with completion callbacks and restart handling |
+| **Update Availability Check** | Non-intrusive update checks returning `AppUpdateResult` (version code, priority) |
+| **Complete Encapsulation** | No Google Play Core dependencies leaked to consuming apps |
 | **Lifecycle-Safe Registration** | Auto-registers or accepts pre-registered `ActivityResultLauncher` |
 | **Smart In-App Review** | Prompts based on install duration, launch count, and remind intervals |
 | **Debug Review Trigger** | `forceShowRateDialog(activity)` for instant testing |
@@ -45,7 +46,7 @@ In your module's `build.gradle.kts`:
 
 ```kotlin
 dependencies {
-    implementation("com.github.elytelabs:inappflow:1.2.0")
+    implementation("com.github.elytelabs:inappflow:1.2.1")
 }
 ```
 
@@ -67,12 +68,12 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         // Checks for updates and starts immediate update flow if available
-        inAppUpdateManager.setupInAppUpdate(AppUpdateType.IMMEDIATE)
+        inAppUpdateManager.setupInAppUpdate(UpdateType.IMMEDIATE)
     }
 
     override fun onResume() {
         super.onResume()
-        // Resumes the immediate update if the user returned from background
+        // Resumes the immediate update if interrupted
         inAppUpdateManager.resumeUpdateIfNeeded()
     }
 
@@ -95,7 +96,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         inAppUpdateManager.setupInAppUpdate(
-            updateType = AppUpdateType.FLEXIBLE,
+            updateType = UpdateType.FLEXIBLE,
             onDownloaded = {
                 // Background download completed! Prompt user to complete & restart
                 showSnackbarWithAction("Update downloaded!", "Restart") {
@@ -115,12 +116,12 @@ class MainActivity : AppCompatActivity() {
 #### C. Checking Update Availability (Non-Intrusive)
 
 ```kotlin
-// Check update status without starting any UI dialogs (e.g., for About page / badges)
-inAppUpdateManager.checkUpdateAvailability { isAvailable, appUpdateInfo ->
-    if (isAvailable && appUpdateInfo != null) {
-        val availableVersionCode = appUpdateInfo.availableVersionCode()
-        val priority = appUpdateInfo.updatePriority() // 0 to 5
-        // Show update badge or banner
+// Check update status without opening any dialogs (ideal for settings / badges)
+inAppUpdateManager.checkUpdateAvailability { result ->
+    if (result.isAvailable) {
+        val versionCode = result.availableVersionCode
+        val priority = result.updatePriority // 0 to 5
+        // Prompt user or display an "Update Available" badge
     }
 }
 ```
@@ -147,9 +148,9 @@ class MainActivity : AppCompatActivity() {
 
         // Configure thresholds & track launch
         InAppReviewManager.with(this)
-            .setInstallDays(2)      // Minimum days since install
-            .setLaunchTimes(3)      // Minimum app launches
-            .setRemindInterval(2)   // Days to wait before showing again if dismissed
+            .setInstallDays(3)      // Minimum days since install
+            .setLaunchTimes(5)      // Minimum app launches
+            .setRemindInterval(7)   // Days to wait before showing again if dismissed
             .monitor()              // Tracks current launch
 
         // Trigger check (shows dialog only if all conditions are satisfied)
