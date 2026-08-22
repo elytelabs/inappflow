@@ -1,16 +1,15 @@
 plugins {
     alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.android)
 
     `maven-publish`
 }
 
 android {
     namespace = "com.elytelabs.inappflow"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
-        minSdk = 24
+        minSdk = 25
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
@@ -29,6 +28,12 @@ android {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
     }
+
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+        }
+    }
 }
 
 dependencies {
@@ -46,26 +51,25 @@ dependencies {
 }
 
 // Maven publishing configuration
-publishing {
-    publications {
-        register<MavenPublication>("release") {
-            groupId = "com.elytelabs.inappflow"
-            artifactId = "inappflow"
-            version = "1.1.7"
-
-            afterEvaluate {
+afterEvaluate {
+    publishing {
+        publications {
+            register<MavenPublication>("release") {
+                groupId = "com.elytelabs.inappflow"
+                artifactId = "inappflow"
+                version = "1.2.0"
                 from(components["release"])
-            }
 
-            pom {
-                name.set("InAppFlow")
-                description.set("InApp Review & Update Library")
-                url.set("https://github.com/elytelabs/inappflow")
+                pom {
+                    name.set("InAppFlow")
+                    description.set("InApp Review & Update Library")
+                    url.set("https://github.com/elytelabs/inappflow")
 
-                licenses {
-                    license {
-                        name.set("Apache 2.0")
-                        url.set("http://www.apache.org/licenses/LICENSE-2.0.txt")
+                    licenses {
+                        license {
+                            name.set("Apache 2.0")
+                            url.set("http://www.apache.org/licenses/LICENSE-2.0.txt")
+                        }
                     }
                 }
             }

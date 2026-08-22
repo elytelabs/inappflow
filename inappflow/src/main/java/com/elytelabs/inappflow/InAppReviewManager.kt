@@ -8,6 +8,7 @@ import android.util.Log
 import com.google.android.play.core.review.ReviewInfo
 import com.google.android.play.core.review.ReviewManager
 import com.google.android.play.core.review.ReviewManagerFactory
+import java.lang.ref.WeakReference
 import java.util.Date
 
 /**
@@ -17,10 +18,10 @@ import java.util.Date
  * based on install date, launch count, and remind intervals.
  *
  * **Memory Leak Prevention:**
- * Uses ApplicationContext only to prevent Activity/Fragment context leaks.
+ * Uses ApplicationContext internally and WeakReference for delayed Activity presentation.
  *
  * Usage:
- * ```
+ * ```kotlin
  * // In Application class or MainActivity onCreate
  * InAppReviewManager.with(applicationContext)
  *     .setInstallDays(3)
@@ -54,7 +55,6 @@ class InAppReviewManager private constructor(context: Context) {
 
     /**
      * Application context to prevent memory leaks.
-     * Always use applicationContext, never Activity context.
      */
     private val appContext: Context = context.applicationContext
 
@@ -74,7 +74,6 @@ class InAppReviewManager private constructor(context: Context) {
 
         /**
          * Singleton instance holder.
-         * Holds ApplicationContext only - safe from memory leaks.
          */
         @Volatile
         private var instance: InAppReviewManager? = null
@@ -82,7 +81,7 @@ class InAppReviewManager private constructor(context: Context) {
         /**
          * Initializes or retrieves the singleton instance.
          *
-         * @param context Any context (will be converted to ApplicationContext internally)
+         * @param context Any context (converted to ApplicationContext internally)
          * @return Singleton instance of InAppReviewManager
          */
         fun with(context: Context): InAppReviewManager {
@@ -93,9 +92,6 @@ class InAppReviewManager private constructor(context: Context) {
 
         /**
          * Checks if conditions are met and shows the review dialog if needed.
-         *
-         * This is the main entry point for triggering the review flow.
-         * Call this in onResume() or after a positive user interaction.
          *
          * @param activity The Activity to show the review dialog in (must not be finishing)
          */
@@ -120,11 +116,26 @@ class InAppReviewManager private constructor(context: Context) {
         }
 
         /**
-         * Checks if the current date is past the threshold from a target date.
+         * Instantly requests and shows the in-app review flow bypassing
+         * launch count and time threshold checks.
          *
-         * @param targetDate The starting date in milliseconds
-         * @param thresholdDays Number of days that must pass
-         * @return true if threshold days have passed
+         * Ideal for developer testing or manual "Rate Us" button clicks.
+         */
+        fun forceShowRateDialog(activity: Activity) {
+            val manager = with(activity)
+            manager.showDialogInternal(activity)
+        }
+
+        /**
+         * Resets tracking preferences (install date, launch count, remind interval).
+         */
+        fun reset(context: Context) {
+            ReviewPrefs.reset(context.applicationContext)
+            Log.d(TAG, "InAppReview preferences reset.")
+        }
+
+        /**
+         * Checks if the current date is past the threshold from a target date.
          */
         private fun isOverDate(targetDate: Long, thresholdDays: Int): Boolean {
             val currentTime = Date().time
@@ -135,9 +146,6 @@ class InAppReviewManager private constructor(context: Context) {
 
     /**
      * Sets the minimum number of app launches required before showing review.
-     *
-     * @param launchTimes Minimum launch count (must be positive)
-     * @return This instance for method chaining
      */
     fun setLaunchTimes(launchTimes: Int): InAppReviewManager {
         require(launchTimes > 0) { "Launch times must be positive" }
@@ -148,9 +156,6 @@ class InAppReviewManager private constructor(context: Context) {
 
     /**
      * Sets the minimum number of days since installation before showing review.
-     *
-     * @param installDays Minimum days since install (must be non-negative)
-     * @return This instance for method chaining
      */
     fun setInstallDays(installDays: Int): InAppReviewManager {
         require(installDays >= 0) { "Install days must be non-negative" }
@@ -161,9 +166,6 @@ class InAppReviewManager private constructor(context: Context) {
 
     /**
      * Sets the interval in days before showing the review prompt again.
-     *
-     * @param remindInterval Days to wait before next prompt (must be positive)
-     * @return This instance for method chaining
      */
     fun setRemindInterval(remindInterval: Int): InAppReviewManager {
         require(remindInterval > 0) { "Remind interval must be positive" }
@@ -173,12 +175,16 @@ class InAppReviewManager private constructor(context: Context) {
     }
 
     /**
+     * Sets whether the user has opted out of review prompts.
+     */
+    fun setOptOut(optOut: Boolean): InAppReviewManager {
+        ReviewPrefs.setOptOut(appContext, optOut)
+        Log.d(TAG, "Opt-out set to: $optOut")
+        return this
+    }
+
+    /**
      * Monitors app launches and updates stored preferences.
-     *
-     * Call this in onCreate() of your main Activity or Application class.
-     * It tracks:
-     * - First launch date (install date)
-     * - Launch count
      */
     fun monitor() {
         if (ReviewPrefs.isFirstLaunch(appContext)) {
@@ -194,11 +200,6 @@ class InAppReviewManager private constructor(context: Context) {
 
     /**
      * Shows the in-app review dialog with a delay.
-     *
-     * The delay allows the user to settle into the Activity before
-     * being interrupted with a review prompt.
-     *
-     * @param activity The Activity to show the dialog in
      */
     fun showRateDialog(activity: Activity) {
         if (activity.isFinishing || activity.isDestroyed) {
@@ -206,14 +207,14 @@ class InAppReviewManager private constructor(context: Context) {
             return
         }
 
-        // Use main looper to ensure we're on the UI thread
+        val activityRef = WeakReference(activity)
         val handler = Handler(Looper.getMainLooper())
         handler.postDelayed({
-            // Double-check activity state after delay
-            if (!activity.isFinishing && !activity.isDestroyed) {
-                showDialogInternal(activity)
+            val currentActivity = activityRef.get()
+            if (currentActivity != null && !currentActivity.isFinishing && !currentActivity.isDestroyed) {
+                showDialogInternal(currentActivity)
             } else {
-                Log.d(TAG, "Activity finished during delay. Review dialog cancelled.")
+                Log.d(TAG, "Activity finished or reclaimed during delay. Review dialog cancelled.")
             }
         }, REVIEW_DIALOG_DELAY_MS)
 
@@ -222,15 +223,13 @@ class InAppReviewManager private constructor(context: Context) {
 
     /**
      * Checks if all conditions are met to show the review dialog.
-     *
-     * Conditions:
-     * 1. Minimum launch count reached
-     * 2. Minimum days since install passed
-     * 3. Minimum days since last remind passed
-     *
-     * @return true if all conditions are met
      */
     fun shouldShowRateDialog(): Boolean {
+        if (ReviewPrefs.isOptedOut(appContext)) {
+            Log.d(TAG, "User has opted out of review prompts.")
+            return false
+        }
+
         val overLaunchTimes = isOverLaunchTimes()
         val overInstallDate = isOverInstallDate()
         val overRemindDate = isOverRemindDate()
@@ -240,25 +239,16 @@ class InAppReviewManager private constructor(context: Context) {
         return overLaunchTimes && overInstallDate && overRemindDate
     }
 
-    /**
-     * Checks if the app has been launched enough times.
-     */
     private fun isOverLaunchTimes(): Boolean {
         val count = ReviewPrefs.getLaunchCount(appContext)
         return count >= launchTimesThreshold
     }
 
-    /**
-     * Checks if enough days have passed since app installation.
-     */
     private fun isOverInstallDate(): Boolean {
         val installDate = ReviewPrefs.getInstallDate(appContext)
         return isOverDate(installDate, installDaysThreshold)
     }
 
-    /**
-     * Checks if enough days have passed since the last review reminder.
-     */
     private fun isOverRemindDate(): Boolean {
         val remindDate = ReviewPrefs.getRemindInterval(appContext)
         return isOverDate(remindDate, remindIntervalDays)
@@ -279,16 +269,12 @@ class InAppReviewManager private constructor(context: Context) {
                 Log.d(TAG, "Review flow request successful. Launching review dialog.")
                 startReview(activity, reviewManager, reviewInfo)
             } else {
-                // Request failed - update remind date to avoid showing too frequently
                 Log.e(TAG, "Review flow request failed", request.exception)
                 ReviewPrefs.setRemindIntervalDate(appContext)
             }
         }
     }
 
-    /**
-     * Launches the actual review dialog UI.
-     */
     private fun startReview(
         activity: Activity,
         reviewManager: ReviewManager,
@@ -297,8 +283,6 @@ class InAppReviewManager private constructor(context: Context) {
         val flow = reviewManager.launchReviewFlow(activity, reviewInfo)
 
         flow.addOnCompleteListener { task ->
-            // The API doesn't indicate whether the user reviewed or dismissed
-            // Update remind date regardless of result
             ReviewPrefs.setRemindIntervalDate(appContext)
 
             if (task.isSuccessful) {

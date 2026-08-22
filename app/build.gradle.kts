@@ -1,16 +1,15 @@
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
 }
 
 android {
-    namespace = "com.elytelabs.inappflow"
-    compileSdk = 36
+    namespace = "com.elytelabs.inappflow.demo"
+    compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.elytelabs.inappflow"
-        minSdk = 24
-        targetSdk = 36
+        applicationId = "com.elytelabs.inappflow.demo"
+        minSdk = 25
+        targetSdk = 37
         versionCode = 1
         versionName = "1.0"
 
